@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS todos (
+  id TEXT PRIMARY KEY,
+  text TEXT NOT NULL
+);
+
+selectAll:
+SELECT * FROM todos;
+
+insert:
+INSERT INTO todos (id, text) VALUES (?, ?);
+
+delete:
+DELETE FROM todos WHERE id = ?;
