@@ -1,14 +1,18 @@
 import app.cash.sqldelight.async.coroutines.awaitAsList
 import com.yt8492.express.db.Database
+import cz.sazel.sqldelight.node.sqlite3.executeSuspendingAsList
 import cz.sazel.sqldelight.node.sqlite3.initSqlite3SqlDriver
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.promise
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.js.json
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 @OptIn(ExperimentalUuidApi::class)
 suspend fun main() {
+  val mutex = Mutex()
   val driver = initSqlite3SqlDriver(
     filename = "todo.db",
     schema = Database.Schema,
@@ -20,13 +24,15 @@ suspend fun main() {
   app.use(cors())
   app.get("/todos") { _, res, next ->
     MainScope().promise {
-      val todos = queries.selectAll()
-        .awaitAsList()
-        .map {
-          json("id" to it.id, "text" to it.text)
-        }
-        .toTypedArray()
-      res.json(todos)
+      mutex.withLock {
+        val todos = queries.selectAll()
+          .executeSuspendingAsList()
+          .map {
+            json("id" to it.id, "text" to it.text)
+          }
+          .toTypedArray()
+        res.json(todos)
+      }
     }.catch(next)
   }
   app.post("/todos") { req, res, next ->
@@ -36,10 +42,12 @@ suspend fun main() {
     }
     val id = Uuid.random().toHexString()
     MainScope().promise {
-      database.transaction {
-        queries.insert(id, text)
+      mutex.withLock {
+        database.transaction {
+          queries.insert(id, text)
+        }
+        res.sendStatus(201)
       }
-      res.sendStatus(201)
     }.catch(next)
   }
   app.delete("/todos/:id") { req, res, next ->
@@ -48,10 +56,12 @@ suspend fun main() {
       return@delete
     }
     MainScope().promise {
-      database.transaction {
-        queries.delete(id)
+      mutex.withLock {
+        database.transaction {
+          queries.delete(id)
+        }
+        res.sendStatus(204)
       }
-      res.sendStatus(204)
     }
   }
   app.listen(8080)
